@@ -13,18 +13,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get total commits
+      - name: Calculate total commits
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          START_YEAR=2000
-          END_YEAR=$(date +%Y)
           TOTAL=0
 
-          for YEAR in $(seq $START_YEAR $END_YEAR); do
+          for YEAR in $(seq 2000 $(date +%Y)); do
             FROM="${YEAR}-01-01T00:00:00Z"
             TO="$((YEAR + 1))-01-01T00:00:00Z"
 
@@ -38,15 +36,21 @@ jobs:
                   }
                 }
               ' \
-              -F login=AC1DST4R \
-              -F from="$FROM" \
-              -F to="$TO" \
+              -f login="AC1DST4R" \
+              -f from="$FROM" \
+              -f to="$TO" \
               --jq '.data.user.contributionsCollection.totalCommitContributions')
 
-            TOTAL=$((TOTAL + COUNT))
+            if [ -n "$COUNT" ]; then
+              TOTAL=$((TOTAL + COUNT))
+            fi
+
+            echo "$YEAR: $COUNT commits"
           done
 
-          echo "Total commits: $TOTAL"
+          echo "=========================="
+          echo "TOTAL COMMITS: $TOTAL"
+          echo "=========================="
 
           cat > commits.json <<EOF
           {
@@ -57,7 +61,7 @@ jobs:
           }
           EOF
 
-      - name: Commit changes
+      - name: Commit updated count
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -65,7 +69,7 @@ jobs:
           git add commits.json
 
           if git diff --cached --quiet; then
-            echo "No changes."
+            echo "No changes to commit."
           else
             git commit -m "Update total commit count"
             git push
