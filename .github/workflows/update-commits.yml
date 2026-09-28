@@ -1,4 +1,4 @@
-name: Update Commit Count
+name: Update Total Commits
 
 on:
   schedule:
@@ -13,29 +13,60 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Get commit count
+      - name: Get total commits
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          COUNT=$(gh api "users/AC1DST4R/repos?per_page=100" --paginate --jq '.[].name' | while read repo; do
-            gh api "repos/AC1DST4R/$repo/commits?author=AC1DST4R&per_page=100" --paginate --jq '.[] | .sha'
-          done | sort -u | wc -l)
+          START_YEAR=2000
+          END_YEAR=$(date +%Y)
+          TOTAL=0
+
+          for YEAR in $(seq $START_YEAR $END_YEAR); do
+            FROM="${YEAR}-01-01T00:00:00Z"
+            TO="$((YEAR + 1))-01-01T00:00:00Z"
+
+            COUNT=$(gh api graphql \
+              -f query='
+                query($login: String!, $from: DateTime!, $to: DateTime!) {
+                  user(login: $login) {
+                    contributionsCollection(from: $from, to: $to) {
+                      totalCommitContributions
+                    }
+                  }
+                }
+              ' \
+              -F login=AC1DST4R \
+              -F from="$FROM" \
+              -F to="$TO" \
+              --jq '.data.user.contributionsCollection.totalCommitContributions')
+
+            TOTAL=$((TOTAL + COUNT))
+          done
+
+          echo "Total commits: $TOTAL"
 
           cat > commits.json <<EOF
           {
             "schemaVersion": 1,
             "label": "TOTAL COMMITS",
-            "message": "$COUNT",
+            "message": "$TOTAL",
             "color": "red"
           }
           EOF
 
-      - name: Commit updated count
+      - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add commits.json
-          git commit -m "Update commit count" || exit 0
-          git push
+
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "Update total commit count"
+            git push
+          fi
